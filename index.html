@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIZONYX - ASL Sentence Builder Engine</title>
+    <title>FIZONYX - ASL & Custom Sign Translator</title>
     <!-- MediaPipe Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
@@ -27,7 +27,7 @@
         }
 
         header {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
             text-align: center;
         }
 
@@ -46,9 +46,9 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 15px;
+            gap: 20px;
             width: 100%;
-            max-width: 800px;
+            max-width: 720px;
         }
 
         .video-wrapper {
@@ -72,62 +72,42 @@
             transform: scaleX(-1);
         }
 
-        .display-card {
+        .status-card {
             background-color: #1e293b;
             border: 1px solid #334155;
             border-radius: 10px;
-            padding: 15px;
+            padding: 20px;
             width: 100%;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .row-box {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #0f172a;
-            padding: 10px 15px;
-            border-radius: 8px;
-            border-left: 4px solid #38bdf8;
+            text-align: center;
         }
 
         .label {
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             color: #94a3b8;
             text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
-        .val-text {
-            font-size: 1.5rem;
+        .detected-text {
+            font-size: 2.5rem;
             font-weight: bold;
-            color: #4ade80;
+            color: #38bdf8;
+            margin: 10px 0;
+            min-height: 3rem;
         }
 
-        .sentence-box {
-            background: #0f172a;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 4px solid #f43f5e;
-            font-size: 1.8rem;
-            font-weight: bold;
-            color: #f8fafc;
-            min-height: 60px;
-            word-break: break-all;
-        }
-
-        .guide-box {
-            background-color: #1e293b;
+        .instruction-box {
+            background-color: #0284c71a;
+            border-left: 4px solid #0284c7;
             padding: 12px;
-            border-radius: 8px;
-            border: 1px solid #334155;
+            border-radius: 4px;
             font-size: 0.85rem;
-            color: #cbd5e1;
+            color: #e0f2fe;
+            text-align: left;
             width: 100%;
         }
 
-        .guide-box ul {
+        .instruction-box ul {
             margin-left: 20px;
             margin-top: 5px;
         }
@@ -137,7 +117,7 @@
 
     <header>
         <h1>FIZONYX Vision Engine</h1>
-        <p class="subtitle">ASL Alphabets & Daily Signs to Sentence Speech</p>
+        <p class="subtitle">ASL Alphabets & Custom Sign to Speech Engine</p>
     </header>
 
     <div class="container">
@@ -146,21 +126,19 @@
             <canvas id="output_canvas"></canvas>
         </div>
 
-        <div class="display-card">
-            <div class="row-box">
-                <span class="label">Current Detection:</span>
-                <span id="current_detected" class="val-text">None</span>
-            </div>
-            <div class="label">Constructed Sentence:</div>
-            <div id="sentence_output" class="sentence-box">...</div>
+        <div class="status-card">
+            <div class="label">Detected Sign / Letter</div>
+            <div id="gesture_output" class="detected-text">Waiting for Gesture...</div>
         </div>
 
-        <div class="guide-box">
-            <strong>Controls & Navigation:</strong>
+        <div class="instruction-box">
+            <strong>Supported Signs:</strong>
             <ul>
-                <li><strong>Palm Down (Flat Hand Facing Down):</strong> SPEAK the full sentence out loud.</li>
-                <li><strong>Hand Vertical Straight:</strong> RESET/CLEAR sentence buffer.</li>
-                <li><strong>ASL Alphabets (A-Z) & Daily Signs (Eat, Help, Sleep, Milk, More, All Done):</strong> Hold sign for 1.5s to append to sentence.</li>
+                <li><strong>A:</strong> Closed Fist with Thumb Extended Alongside</li>
+                <li><strong>B:</strong> 4 Fingers Extended Straight + Thumb Tucked in Palm</li>
+                <li><strong>C:</strong> Hand Curved in 'C' Shape</li>
+                <li><strong>D:</strong> Index Extended Up + Other Fingers Touching Thumb</li>
+                <li><strong>HI / BYE / YES / NO / HELP:</strong> Basic Gestures</li>
             </ul>
         </div>
     </div>
@@ -169,86 +147,29 @@
         const videoElement = document.getElementById('input_video');
         const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
-        
-        const currentDetectedUI = document.getElementById('current_detected');
-        const sentenceOutputUI = document.getElementById('sentence_output');
+        const gestureOutput = document.getElementById('gesture_output');
 
-        let sentenceBuffer = [];
-        let activeGesture = "";
-        let gestureHoldStartTime = 0;
-        const HOLD_THRESHOLD_MS = 1200; // Hold sign for 1.2s to commit letter/word
-        let isSpokenState = false;
+        let lastSpokenText = '';
+        let speechCooldown = false;
 
         function speakText(text) {
-            if (!text || text.trim() === "") return;
+            if (speechCooldown || lastSpokenText === text || text === "Waiting..." || text === "No Hand Detected") return;
+
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 0.9;
+            utterance.rate = 1;
             utterance.pitch = 1;
+            
             speechSynthesis.speak(utterance);
+            lastSpokenText = text;
+            speechCooldown = true;
+
+            setTimeout(() => {
+                speechCooldown = false;
+            }, 1800);
         }
 
         function getDistance(p1, p2) {
             return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
-        }
-
-        function processGesture(landmarks) {
-            const wrist = landmarks[0];
-            const thumbTip = landmarks[4], thumbMCP = landmarks[2];
-            const indexTip = landmarks[8], indexPip = landmarks[6], indexMCP = landmarks[5];
-            const middleTip = landmarks[12], middlePip = landmarks[10], middleMCP = landmarks[9];
-            const ringTip = landmarks[16], ringPip = landmarks[14], ringMCP = landmarks[13];
-            const pinkyTip = landmarks[20], pinkyPip = landmarks[18], pinkyMCP = landmarks[17];
-
-            const isIndexUp = indexTip.y < indexPip.y;
-            const isMiddleUp = middleTip.y < middlePip.y;
-            const isRingUp = ringTip.y < ringPip.y;
-            const isPinkyUp = pinkyTip.y < pinkyPip.y;
-
-            // Check Palm Orientation
-            const isPalmFacingDown = (wrist.y < indexMCP.y) && (Math.abs(indexMCP.y - pinkyMCP.y) < 0.1);
-            const isHandVertical = (wrist.y > indexMCP.y) && (Math.abs(indexMCP.x - pinkyMCP.x) < 0.15);
-
-            // CONTROL SIGN 1: Speak Sentence (Palm Flat Facing Down)
-            if (isPalmFacingDown) {
-                return "ACTION_SPEAK";
-            }
-
-            // CONTROL SIGN 2: Reset Sentence (Hand Up Vertical Straight)
-            if (isHandVertical && isIndexUp && isMiddleUp && isRingUp && isPinkyUp) {
-                return "ACTION_RESET";
-            }
-
-            // DAILY SIGNS & ALPHABET DETECTION LOGIC
-            // EAT / FOOD (Fingers closed touching thumb near chin level)
-            if (!isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp && getDistance(indexTip, thumbTip) < 0.05) {
-                return "EAT";
-            }
-
-            // SLEEP / HELP / MORE / ALL DONE LOGIC
-            if (isIndexUp && isMiddleUp && isRingUp && isPinkyUp && getDistance(thumbTip, pinkyMCP) < 0.08) {
-                return "ALL DONE";
-            }
-
-            if (thumbTip.y < indexMCP.y && !isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp) {
-                return "HELP";
-            }
-
-            // ASL ALPHABETS (Sample heuristic mapped for demo stability)
-            if (isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp) {
-                if (getDistance(thumbTip, middlePip) < 0.08) return "D";
-                return "ONE / A";
-            }
-
-            if (isIndexUp && isMiddleUp && !isRingUp && !isPinkyUp) {
-                if (Math.abs(indexTip.x - middleTip.x) > 0.05) return "V";
-                return "U";
-            }
-
-            if (isIndexUp && isMiddleUp && isRingUp && !isPinkyUp) return "W";
-            if (isIndexUp && isMiddleUp && isRingUp && isPinkyUp) return "B";
-            if (!isIndexUp && !isMiddleUp && !isRingUp && isPinkyUp) return "I";
-
-            return "DETECTING...";
         }
 
         function onResults(results) {
@@ -260,48 +181,88 @@
             canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const landmarks = results.multiHandLandmarks[0];
-                drawLandmarks(canvasCtx, landmarks);
+                for (const landmarks of results.multiHandLandmarks) {
+                    
+                    const wrist = landmarks[0];
+                    const thumbTip = landmarks[4];
+                    const indexTip = landmarks[8];
+                    const middleTip = landmarks[12];
+                    const ringTip = landmarks[16];
+                    const pinkyTip = landmarks[20];
 
-                const detected = processGesture(landmarks);
-                currentDetectedUI.innerText = detected;
+                    const thumbPip = landmarks[2];
+                    const indexPip = landmarks[6];
+                    const middlePip = landmarks[10];
+                    const ringPip = landmarks[14];
+                    const pinkyPip = landmarks[18];
 
-                if (detected === "ACTION_SPEAK") {
-                    if (!isSpokenState) {
-                        const fullSentence = sentenceBuffer.join(" ");
-                        speakText(fullSentence || "Empty sentence");
-                        isSpokenState = true;
+                    const indexMCP = landmarks[5];
+                    const pinkyMCP = landmarks[17];
+
+                    // Check Finger Extension Status
+                    const isIndexExtended = indexTip.y < indexPip.y;
+                    const isMiddleExtended = middleTip.y < middlePip.y;
+                    const isRingExtended = ringTip.y < ringPip.y;
+                    const isPinkyExtended = pinkyTip.y < pinkyPip.y;
+
+                    const thumbToPinkyBaseDist = getDistance(thumbTip, pinkyMCP);
+                    const handScale = getDistance(indexMCP, pinkyMCP);
+                    const foldRatio = thumbToPinkyBaseDist / handScale;
+
+                    // ASL 'C' Detection Distances
+                    const indexToThumbDist = getDistance(indexTip, thumbTip);
+                    const isCShape = indexToThumbDist > 0.15 && indexToThumbDist < 0.35 && 
+                                     indexTip.x < thumbTip.x + 0.1 && !isIndexExtended;
+
+                    let currentGesture = "Waiting...";
+
+                    // Recognition Logic
+                    if (!isIndexExtended && !isMiddleExtended && !isRingExtended && !isPinkyExtended) {
+                        // All main fingers folded
+                        if (thumbTip.y < indexMCP.y) {
+                            currentGesture = "HELP";
+                        } else if (thumbTip.x > indexMCP.x || thumbTip.y > thumbPip.y) {
+                            currentGesture = "Sign A"; // ASL 'A'
+                        } else {
+                            currentGesture = "YES";
+                        }
+                    } else if (isIndexExtended && isMiddleExtended && isRingExtended && isPinkyExtended) {
+                        // All fingers straight
+                        if (foldRatio < 0.95) {
+                            currentGesture = "Sign B"; // ASL 'B'
+                        } else if (foldRatio < 1.2) {
+                            currentGesture = "HI";
+                        } else {
+                            currentGesture = "BYE";
+                        }
+                    } else if (isIndexExtended && !isMiddleExtended && !isRingExtended && !isPinkyExtended) {
+                        // Only Index Extended
+                        const thumbToMiddleDist = getDistance(thumbTip, middleTip);
+                        if (thumbToMiddleDist < 0.12) {
+                            currentGesture = "Sign D"; // ASL 'D'
+                        } else {
+                            currentGesture = "NO";
+                        }
+                    } else if (isCShape) {
+                        currentGesture = "Sign C"; // ASL 'C'
                     }
-                    return;
-                } else {
-                    isSpokenState = false;
-                }
 
-                if (detected === "ACTION_RESET") {
-                    sentenceBuffer = [];
-                    sentenceOutputUI.innerText = "...";
-                    return;
-                }
+                    gestureOutput.innerText = currentGesture;
+                    gestureOutput.style.color = "#38bdf8";
+                    speakText(currentGesture);
 
-                // Buffer appending with Hold Time threshold
-                if (detected !== "DETECTING..." && detected !== activeGesture) {
-                    activeGesture = detected;
-                    gestureHoldStartTime = Date.now();
-                } else if (detected === activeGesture && detected !== "DETECTING...") {
-                    if (Date.now() - gestureHoldStartTime > HOLD_THRESHOLD_MS) {
-                        sentenceBuffer.push(detected);
-                        sentenceOutputUI.innerText = sentenceBuffer.join(" ");
-                        activeGesture = ""; // Reset hold
-                    }
+                    drawLandmarks(canvasCtx, landmarks);
                 }
             } else {
-                currentDetectedUI.innerText = "No Hand Detected";
+                gestureOutput.innerText = "No Hand Detected";
+                gestureOutput.style.color = "#94a3b8";
+                lastSpokenText = '';
             }
             canvasCtx.restore();
         }
 
         function drawLandmarks(ctx, landmarks) {
-            ctx.fillStyle = "#38bdf8";
+            ctx.fillStyle = "#f43f5e";
             for (let point of landmarks) {
                 const x = point.x * canvasElement.width;
                 const y = point.y * canvasElement.height;
